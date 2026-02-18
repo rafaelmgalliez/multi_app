@@ -6,7 +6,6 @@ from datetime import datetime, time
 # ==============================================================================
 # CONFIGURAÇÕES E SEGREDOS
 # ==============================================================================
-# Tenta carregar dos Secrets (Nuvem), senão fica vazio para teste local
 try:
     LINK_MAGICO_SCRIPT = st.secrets["LINK_MAGICO"]
     ID_PLANILHA = st.secrets["ID_PLANILHA"]
@@ -17,16 +16,16 @@ except:
 # URL para ler os dados (CSV Público do Google Sheets)
 URL_CSV_PROJETOS = f"https://docs.google.com/spreadsheets/d/{ID_PLANILHA}/gviz/tq?tqx=out:csv&sheet=Projetos"
 
-# Logo Oficial UFRJ (Versão Negativa/Branca)
+# Logo Oficial UFRJ
 LOGO_UFRJ_URL = "https://needier.ufrj.br/wp-content/themes/arion/assets/images/ufrj-horizontal-simplificada-negativa.png"
 
 # ==============================================================================
-# FUNÇÕES DE BACKEND (Conexão Google Sheets)
+# FUNÇÕES DE BACKEND
 # ==============================================================================
 def salvar_no_google(aba, dados_lista):
     """Envia dados para o Google Apps Script via HTTP POST"""
     if not LINK_MAGICO_SCRIPT:
-        st.error("Erro de Configuração: Link do Apps Script não encontrado nos Secrets.")
+        st.error("Erro Crítico: Link do Apps Script não configurado.")
         return False
         
     payload = {"aba": aba, "dados": dados_lista}
@@ -35,61 +34,65 @@ def salvar_no_google(aba, dados_lista):
         if response.status_code == 200:
             return True
         else:
-            st.error(f"Erro ao salvar na nuvem: {response.text}")
+            st.error(f"Erro ao salvar: {response.text}")
             return False
     except Exception as e:
         st.error(f"Erro de conexão: {e}")
         return False
 
+# Adicionamos Cache para não ler a planilha a cada clique, mas atualiza a cada 60s
+@st.cache_data(ttl=60)
 def carregar_projetos():
-    """Lê a planilha de Projetos para preencher o dropdown de agendamento"""
+    """Lê a planilha de Projetos e retorna lista de dicionários"""
     try:
         if not ID_PLANILHA: return []
-        df = pd.read_csv(URL_CSV_PROJETOS)
-        if df.empty: return []
+        
+        # Lê o CSV ignorando erros de linhas ruins
+        df = pd.read_csv(URL_CSV_PROJETOS, on_bad_lines='skip')
+        
+        # --- BLOCO DE DIAGNÓSTICO ---
+        # Se a planilha estiver vazia
+        if df.empty:
+            return []
+            
+        # Verifica se a coluna 'Projeto' existe (Case sensitive)
+        # Se o usuário não colocou cabeçalho, o Pandas usa a 1ª linha como cabeçalho.
+        if 'Projeto' not in df.columns:
+            # Tenta ser inteligente: Se a coluna D existe, renomeia para Projeto
+            if len(df.columns) >= 4:
+                # Assume que a 4ª coluna (índice 3) é o Projeto, baseado na ordem de salvamento
+                col_name = df.columns[3]
+                df = df.rename(columns={col_name: 'Projeto'})
+            else:
+                return [] 
+
         return df.to_dict('records')
-    except:
+    except Exception as e:
+        # Em produção, você pode comentar esse print, mas ajuda no debug
+        print(f"Erro ao ler planilha: {e}")
         return []
 
 # ==============================================================================
-# INTERFACE GRÁFICA (FRONTEND)
+# INTERFACE GRÁFICA
 # ==============================================================================
 st.set_page_config(page_title="LIDDER / UG-NEEDIER", page_icon="🧬", layout="wide")
 
-# CSS Personalizado (Identidade Visual UFRJ)
 st.markdown("""
     <style>
-    /* Cabeçalhos */
     .main-header { font-size: 2.5rem; color: #003366; text-align: center; font-weight: 800; margin-top: 10px; }
     .sub-header { text-align: center; color: #444; font-size: 1.2rem; font-weight: 500; margin-bottom: 5px; }
-    
-    /* Links Oficiais */
     .official-link { text-align: center; margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #ddd; }
     .official-link a { text-decoration: none; color: #003366; font-weight: bold; font-size: 1.1rem; margin: 0 15px; }
     .official-link a:hover { color: #d6001c; text-decoration: underline; }
-    
-    /* Títulos de Seção */
     .section-title { font-size: 1.3rem; font-weight: bold; color: #003366; margin-top: 20px; border-bottom: 3px solid #d6001c; padding-bottom: 5px; }
-    
-    /* Caixas de Aviso */
     .warning-box { background-color: #eef6fc; padding: 15px; border-radius: 8px; border-left: 6px solid #003366; margin-bottom: 20px; color: #2c3e50; }
-    .warning-box a { color: #d6001c; font-weight: bold; text-decoration: underline; }
-    
-    /* Ajuste da Logo UFRJ (Fundo azul para imagem negativa) */
-    div[data-testid="stImage"] > img { 
-        max-height: 80px; 
-        object-fit: contain; 
-        background-color: #003366; /* Azul UFRJ para dar contraste na logo branca */
-        padding: 10px; 
-        border-radius: 8px; 
-    }
+    div[data-testid="stImage"] > img { max-height: 80px; object-fit: contain; background-color: #003366; padding: 10px; border-radius: 8px; }
     div[data-testid="stImage"] { display: flex; justify-content: center; align-items: center; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- CABEÇALHO ---
 col_logo, col_title, col_empty = st.columns([1, 4, 1])
-
 with col_logo:
     try:
         st.image("logo_ufrj.png", use_container_width=True)
@@ -101,7 +104,6 @@ with col_title:
     st.markdown('<div class="sub-header">Núcleo de Enfrentamento e Estudos de Doenças Infecciosas Emergentes e Reemergentes</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Universidade Federal do Rio de Janeiro</div>', unsafe_allow_html=True)
 
-# --- BARRA DE LINKS ---
 st.markdown("""
     <div class="official-link">
         🌐 <a href="https://needier.ufrj.br/" target="_blank">Site Oficial do NEEDIER</a>
@@ -110,11 +112,10 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# --- ABAS DE NAVEGAÇÃO ---
 tab1, tab2, tab3 = st.tabs(["🏛️ A Unidade", "📝 Cadastro de Projeto (PI)", "📅 Agendamento de Uso"])
 
 # ==============================================================================
-# ABA 1: INFO E REGRAS
+# ABA 1: INFO
 # ==============================================================================
 with tab1:
     col_info1, col_info2 = st.columns([1.5, 1])
@@ -124,28 +125,24 @@ with tab1:
         O **LIDDER (Laboratório de Investigação Diagnóstica de Doenças Infecciosas Emergentes e Reemergentes)** é uma unidade estratégica da UFRJ, dedicada à vigilância genômica, diagnóstico molecular avançado e pesquisa 
         em patógenos de alto risco.
         """)
-        
-        # Link do Regimento Atualizado aqui
         st.markdown('<div class="warning-box">⚠️ <b>Normas de Acesso (<a href="https://needier.ufrj.br/?page_id=70" target="_blank">Ler Regimento Interno</a>):</b><br>'
-                    '1. <b>Cadastro Obrigatório:</b> O uso da plataforma é exclusivo para projetos cadastrados pelo Investigador Principal (PI).<br>'
-                    '2. <b>Sequenciamento:</b> O agendamento do <b>Illumina NextSeq 1000</b> requer, obrigatoriamente, o envio do laudo de Controle de Qualidade (TapeStation/Qubit).<br>'
-                    '3. <b>Dados:</b> A unidade não realiza armazenamento de longo prazo. O backup dos dados brutos é responsabilidade imediata do usuário.<br>'
-                    '4. <b>Biossegurança:</b> O respeito às normas NB2/NB3 é mandatório.</div>', unsafe_allow_html=True)
+                    '1. <b>Cadastro Obrigatório:</b> Exclusivo para PIs.<br>'
+                    '2. <b>Sequenciamento:</b> Obrigatório QC (TapeStation/Qubit).<br>'
+                    '3. <b>Dados:</b> Backup imediato sob responsabilidade do usuário.<br>'
+                    '4. <b>Biossegurança:</b> Respeito às normas NB2/NB3.</div>', unsafe_allow_html=True)
 
     with col_info2:
         st.markdown('<div class="section-title">Equipamentos Disponíveis</div>', unsafe_allow_html=True)
         st.info("""
         **Sequenciamento de Nova Geração**
         * Illumina NextSeq 1000
-        
         **Preparo de Amostras & QC**
         * TapeStation System Agilent 4200
         * BluePippin Instrument (Sage Science)
         """)
-        st.markdown("Para mais detalhes técnicos, consulte o [Site do NEEDIER](https://needier.ufrj.br/).")
 
 # ==============================================================================
-# ABA 2: CADASTRO DE PROJETO (PI)
+# ABA 2: CADASTRO
 # ==============================================================================
 with tab2:
     st.markdown('<div class="section-title">Cadastro do Investigador Principal (PI)</div>', unsafe_allow_html=True)
@@ -184,7 +181,6 @@ with tab2:
                  area_outro = st.text_input("Especifique a outra área:")
 
         proj_resumo = st.text_area("Resumo do Projeto e Justificativa de Uso*", max_chars=1000)
-
         st.markdown("---")
         proj_nb3 = st.checkbox("Este projeto envolve manipulação de patógenos de Risco 3?")
         termo_aceite = st.checkbox("Declaro que as informações são verdadeiras e concordo com o Regimento Interno do LIDDER/NEEDIER.")
@@ -195,7 +191,6 @@ with tab2:
             if not coord_nome or not coord_email or not proj_titulo or not proj_fomento or not termo_aceite:
                 st.error("❌ Por favor, preencha todos os campos obrigatórios.")
             else:
-                # Formata campos "Outros"
                 inst_final = f"{coord_inst}: {inst_extra}" if inst_extra else coord_inst
                 fomento_final = ", ".join(proj_fomento)
                 if fomento_outro: fomento_final += f" ({fomento_outro})"
@@ -211,20 +206,29 @@ with tab2:
                 if salvar_no_google("Projetos", dados_projeto):
                     st.success(f"✅ Projeto '{proj_titulo}' cadastrado com sucesso!")
                     st.balloons()
-                    st.cache_data.clear() # Atualiza cache para dropdown
+                    carregar_projetos.clear() # Limpa o cache para forçar recarregamento na próxima aba
 
 # ==============================================================================
-# ABA 3: AGENDAMENTO DETALHADO
+# ABA 3: AGENDAMENTO
 # ==============================================================================
 with tab3:
     st.markdown('<div class="section-title">Solicitação de Uso e Serviços</div>', unsafe_allow_html=True)
     
-    # Carrega lista de projetos
+    # Carrega dados do Cache
     lista_db = carregar_projetos()
-    opcoes_projetos = [item['Projeto'] for item in lista_db if 'Projeto' in item] if lista_db else []
+    
+    # Tenta extrair nomes. Se der erro (lista vazia ou chave errada), retorna lista vazia
+    opcoes_projetos = []
+    if lista_db:
+        # Procura pela chave 'Projeto'
+        opcoes_projetos = [item.get('Projeto', 'Projeto sem Nome') for item in lista_db]
     
     if not opcoes_projetos:
-        st.warning("⚠️ Nenhum projeto encontrado no sistema. Realize o cadastro na aba anterior primeiro.")
+        st.warning("⚠️ Nenhum projeto encontrado. Se você acabou de cadastrar, aguarde alguns segundos ou verifique se a planilha 'Projetos' possui cabeçalhos na Linha 1.")
+        # Botão de emergência para recarregar
+        if st.button("🔄 Atualizar Lista de Projetos"):
+            carregar_projetos.clear()
+            st.rerun()
         opcoes_projetos = ["---"]
 
     with st.form("form_agendamento_detalhado"):
@@ -245,7 +249,6 @@ with tab3:
         st.markdown("**2. Equipamento e Serviço**")
         c_eq1, c_eq2 = st.columns(2)
         with c_eq1:
-            # Lista Oficial Restrita (Apenas os 3 solicitados)
             equip_lista = [
                 "Sequenciador Illumina NextSeq 1000",
                 "TapeStation System Agilent 4200",
@@ -282,10 +285,8 @@ with tab3:
         with c_date2: time_ini = st.time_input("Horário Início*", value=time(9,0))
         with c_date3: time_fim = st.time_input("Horário Término*", value=time(13,0))
 
-        # Lógica de QC para NextSeq
         is_nextseq = "NextSeq 1000" in equip_escolha
         msg_qc = "Upload do Laudo de QC (TapeStation/Qubit) *" if is_nextseq else "Upload de QC (Opcional)"
-        
         qc_file = st.file_uploader(msg_qc, type=['pdf', 'jpg', 'png'], help="Obrigatório para NextSeq.")
         
         obs_geral = st.text_area("Observações Adicionais")
