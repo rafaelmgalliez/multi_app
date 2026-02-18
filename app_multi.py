@@ -13,8 +13,10 @@ except:
     LINK_MAGICO_SCRIPT = "" 
     ID_PLANILHA = ""
 
-# URL para ler os dados (CSV Público do Google Sheets)
+# URLs para leitura (CSV Público do Google Sheets)
+# Ajuste o parâmetro 'sheet' para o nome exato da aba na sua planilha
 URL_CSV_PROJETOS = f"https://docs.google.com/spreadsheets/d/{ID_PLANILHA}/gviz/tq?tqx=out:csv&sheet=Projetos"
+URL_CSV_AGENDAMENTOS = f"https://docs.google.com/spreadsheets/d/{ID_PLANILHA}/gviz/tq?tqx=out:csv&sheet=Agendamentos"
 
 # Logo Oficial UFRJ
 LOGO_UFRJ_URL = "https://needier.ufrj.br/wp-content/themes/arion/assets/images/ufrj-horizontal-simplificada-negativa.png"
@@ -25,7 +27,7 @@ LOGO_UFRJ_URL = "https://needier.ufrj.br/wp-content/themes/arion/assets/images/u
 def salvar_no_google(aba, dados_lista):
     """Envia dados para o Google Apps Script via HTTP POST"""
     if not LINK_MAGICO_SCRIPT:
-        st.error("Erro Crítico: Link do Apps Script não configurado nos Secrets.")
+        st.error("Erro Crítico: Link do Apps Script não configurado.")
         return False
         
     payload = {"aba": aba, "dados": dados_lista}
@@ -41,32 +43,43 @@ def salvar_no_google(aba, dados_lista):
         return False
 
 @st.cache_data(ttl=60)
-def carregar_projetos():
-    """Lê a planilha de Projetos e retorna lista de dicionários"""
+def carregar_dados(url, tipo):
+    """Lê planilhas do Google Sheets (Projetos ou Agendamentos)"""
     try:
         if not ID_PLANILHA: return []
         
-        # Lê o CSV da planilha
-        df = pd.read_csv(URL_CSV_PROJETOS)
+        df = pd.read_csv(url)
         
-        # Limpeza: Remove espaços em branco dos nomes das colunas (Ex: "Projeto " vira "Projeto")
+        # Limpeza básica de colunas
         df.columns = df.columns.str.strip()
         
-        # Verificação de Segurança: Garante que a coluna 'Projeto' existe
-        if 'Projeto' not in df.columns:
-            # Se não achar pelo nome, tenta pegar a 4ª coluna (índice 3) pela posição
-            if len(df.columns) >= 4:
-                col_antiga = df.columns[3]
-                df = df.rename(columns={col_antiga: 'Projeto'})
-            else:
-                return [] 
+        if df.empty: return []
 
-        # Remove linhas que porventura estejam vazias na coluna Projeto
-        df = df.dropna(subset=['Projeto'])
-        
+        # Validação específica para Projetos
+        if tipo == "projetos":
+            # Tenta localizar a coluna projeto pelo nome ou posição (coluna D / index 3)
+            col_proj = None
+            if 'Projeto' in df.columns: 
+                col_proj = 'Projeto'
+            elif len(df.columns) >= 4:
+                col_proj = df.columns[3]
+            
+            if col_proj:
+                df = df.rename(columns={col_proj: 'Projeto'})
+                df = df.dropna(subset=['Projeto'])
+            else:
+                return []
+
+        # Validação específica para Agendamentos
+        if tipo == "agendamentos":
+            # Garante que temos datas para o calendário
+            # Mapeia colunas comuns caso o nome varie
+            # Esperado: DataUso, Horario, Equipamento...
+            pass
+
         return df.to_dict('records')
     except Exception as e:
-        print(f"Erro ao ler planilha: {e}")
+        print(f"Erro ao ler {tipo}: {e}")
         return []
 
 # ==============================================================================
@@ -80,7 +93,6 @@ st.markdown("""
     .sub-header { text-align: center; color: #444; font-size: 1.2rem; font-weight: 500; margin-bottom: 5px; }
     .official-link { text-align: center; margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #ddd; }
     .official-link a { text-decoration: none; color: #003366; font-weight: bold; font-size: 1.1rem; margin: 0 15px; }
-    .official-link a:hover { color: #d6001c; text-decoration: underline; }
     .section-title { font-size: 1.3rem; font-weight: bold; color: #003366; margin-top: 20px; border-bottom: 3px solid #d6001c; padding-bottom: 5px; }
     .warning-box { background-color: #eef6fc; padding: 15px; border-radius: 8px; border-left: 6px solid #003366; margin-bottom: 20px; color: #2c3e50; }
     div[data-testid="stImage"] > img { max-height: 80px; object-fit: contain; background-color: #003366; padding: 10px; border-radius: 8px; }
@@ -91,10 +103,8 @@ st.markdown("""
 # --- CABEÇALHO ---
 col_logo, col_title, col_empty = st.columns([1, 4, 1])
 with col_logo:
-    try:
-        st.image("logo_ufrj.png", use_container_width=True)
-    except:
-        st.image(LOGO_UFRJ_URL, use_container_width=True)
+    try: st.image("logo_ufrj.png", use_container_width=True)
+    except: st.image(LOGO_UFRJ_URL, use_container_width=True)
 
 with col_title:
     st.markdown('<div class="main-header">LIDDER / UG-NEEDIER</div>', unsafe_allow_html=True)
@@ -109,7 +119,8 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["🏛️ A Unidade", "📝 Cadastro de Projeto (PI)", "📅 Agendamento de Uso"])
+# --- ABAS ---
+tab1, tab2, tab3, tab4 = st.tabs(["🏛️ A Unidade", "📝 Cadastro de Projeto (PI)", "📅 Calendário de Ocupação", "🔬 Solicitar Uso"])
 
 # ==============================================================================
 # ABA 1: INFO
@@ -143,8 +154,6 @@ with tab1:
 # ==============================================================================
 with tab2:
     st.markdown('<div class="section-title">Cadastro do Investigador Principal (PI)</div>', unsafe_allow_html=True)
-    st.caption("Preenchimento único por vigência do projeto. Necessário para relatórios do MCTI/Finep.")
-
     with st.form("form_cadastro_completo"):
         c1, c2 = st.columns(2)
         with c1:
@@ -203,37 +212,62 @@ with tab2:
                 if salvar_no_google("Projetos", dados_projeto):
                     st.success(f"✅ Projeto '{proj_titulo}' cadastrado com sucesso!")
                     st.balloons()
-                    carregar_projetos.clear() # Limpa o cache para atualizar a lista na hora
+                    carregar_dados.clear() # Limpa o cache
 
 # ==============================================================================
-# ABA 3: AGENDAMENTO
+# ABA 3: CALENDÁRIO (NOVA)
 # ==============================================================================
 with tab3:
+    st.markdown('<div class="section-title">Calendário de Ocupação</div>', unsafe_allow_html=True)
+    st.info("Consulte aqui os horários que já estão reservados para evitar conflitos.")
+
+    lista_agendamentos = carregar_dados(URL_CSV_AGENDAMENTOS, "agendamentos")
+    
+    if lista_agendamentos:
+        df_agenda = pd.DataFrame(lista_agendamentos)
+        
+        # Filtros
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            # Pega lista única de equipamentos agendados
+            equipamentos_unicos = df_agenda['Equipamento'].unique() if 'Equipamento' in df_agenda.columns else []
+            filtro_equip = st.selectbox("Filtrar por Equipamento:", ["Todos"] + list(equipamentos_unicos))
+        
+        # Aplica filtro
+        if filtro_equip != "Todos":
+            df_agenda = df_agenda[df_agenda['Equipamento'] == filtro_equip]
+
+        # Seleciona apenas colunas úteis para visualização
+        colunas_uteis = ['DataUso', 'Horario', 'Equipamento', 'Usuario', 'Lab']
+        # Verifica quais dessas colunas existem no DF
+        cols_final = [c for c in colunas_uteis if c in df_agenda.columns]
+        
+        if not df_agenda.empty:
+            st.dataframe(df_agenda[cols_final].sort_values(by='DataUso'), use_container_width=True, hide_index=True)
+        else:
+            st.warning("Nenhum agendamento encontrado para este filtro.")
+    else:
+        st.warning("Nenhum agendamento registrado no sistema ainda.")
+        
+    if st.button("🔄 Atualizar Calendário"):
+        carregar_dados.clear()
+        st.rerun()
+
+# ==============================================================================
+# ABA 4: SOLICITAR USO
+# ==============================================================================
+with tab4:
     st.markdown('<div class="section-title">Solicitação de Uso e Serviços</div>', unsafe_allow_html=True)
     
-    # Carrega dados do Cache
-    lista_db = carregar_projetos()
-    
-    # Extrai lista de projetos (garante que não haja erros de chave)
-    opcoes_projetos = []
-    if lista_db:
-        opcoes_projetos = [p.get('Projeto', 'Sem Nome') for p in lista_db]
+    lista_db = carregar_dados(URL_CSV_PROJETOS, "projetos")
+    opcoes_projetos = [item.get('Projeto', 'Sem Nome') for item in lista_db] if lista_db else []
     
     if not opcoes_projetos:
-        st.warning("⚠️ Nenhum projeto encontrado no momento.")
-        col_warn, col_btn = st.columns([3, 1])
-        with col_warn:
-            st.info("Se você acabou de cadastrar um projeto, clique no botão ao lado para atualizar a lista.")
-        with col_btn:
-            if st.button("🔄 Atualizar Lista"):
-                carregar_projetos.clear()
-                st.rerun()
-        opcoes_projetos = ["---"]
-    else:
-        # Se encontrou projetos, mostra um botão pequeno discreto para atualizar se precisar
-        if st.button("🔄 Atualizar Projetos", help="Clique se não estiver vendo seu projeto recém-cadastrado"):
-            carregar_projetos.clear()
+        st.warning("⚠️ Nenhum projeto encontrado. Se acabou de cadastrar, clique em 'Atualizar'.")
+        if st.button("🔄 Atualizar Lista de Projetos"):
+            carregar_dados.clear()
             st.rerun()
+        opcoes_projetos = ["---"]
 
     with st.form("form_agendamento_detalhado"):
         st.markdown("**1. Identificação do Usuário**")
@@ -299,7 +333,7 @@ with tab3:
         btn_agendar = st.form_submit_button("Enviar Solicitação", type="primary")
 
         if btn_agendar:
-            if proj_selecionado == "---":
+            if proj_selecionado == "---" or not proj_selecionado:
                 st.error("Selecione um projeto válido.")
             elif not user_nome or not user_email or not user_lab:
                 st.error("Preencha a identificação completa do usuário.")
