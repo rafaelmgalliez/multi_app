@@ -25,7 +25,7 @@ LOGO_UFRJ_URL = "https://needier.ufrj.br/wp-content/themes/arion/assets/images/u
 def salvar_no_google(aba, dados_lista):
     """Envia dados para o Google Apps Script via HTTP POST"""
     if not LINK_MAGICO_SCRIPT:
-        st.error("Erro Crítico: Link do Apps Script não configurado.")
+        st.error("Erro Crítico: Link do Apps Script não configurado nos Secrets.")
         return False
         
     payload = {"aba": aba, "dados": dados_lista}
@@ -40,35 +40,32 @@ def salvar_no_google(aba, dados_lista):
         st.error(f"Erro de conexão: {e}")
         return False
 
-# Adicionamos Cache para não ler a planilha a cada clique, mas atualiza a cada 60s
 @st.cache_data(ttl=60)
 def carregar_projetos():
     """Lê a planilha de Projetos e retorna lista de dicionários"""
     try:
         if not ID_PLANILHA: return []
         
-        # Lê o CSV ignorando erros de linhas ruins
-        df = pd.read_csv(URL_CSV_PROJETOS, on_bad_lines='skip')
+        # Lê o CSV da planilha
+        df = pd.read_csv(URL_CSV_PROJETOS)
         
-        # --- BLOCO DE DIAGNÓSTICO ---
-        # Se a planilha estiver vazia
-        if df.empty:
-            return []
-            
-        # Verifica se a coluna 'Projeto' existe (Case sensitive)
-        # Se o usuário não colocou cabeçalho, o Pandas usa a 1ª linha como cabeçalho.
+        # Limpeza: Remove espaços em branco dos nomes das colunas (Ex: "Projeto " vira "Projeto")
+        df.columns = df.columns.str.strip()
+        
+        # Verificação de Segurança: Garante que a coluna 'Projeto' existe
         if 'Projeto' not in df.columns:
-            # Tenta ser inteligente: Se a coluna D existe, renomeia para Projeto
+            # Se não achar pelo nome, tenta pegar a 4ª coluna (índice 3) pela posição
             if len(df.columns) >= 4:
-                # Assume que a 4ª coluna (índice 3) é o Projeto, baseado na ordem de salvamento
-                col_name = df.columns[3]
-                df = df.rename(columns={col_name: 'Projeto'})
+                col_antiga = df.columns[3]
+                df = df.rename(columns={col_antiga: 'Projeto'})
             else:
                 return [] 
 
+        # Remove linhas que porventura estejam vazias na coluna Projeto
+        df = df.dropna(subset=['Projeto'])
+        
         return df.to_dict('records')
     except Exception as e:
-        # Em produção, você pode comentar esse print, mas ajuda no debug
         print(f"Erro ao ler planilha: {e}")
         return []
 
@@ -206,7 +203,7 @@ with tab2:
                 if salvar_no_google("Projetos", dados_projeto):
                     st.success(f"✅ Projeto '{proj_titulo}' cadastrado com sucesso!")
                     st.balloons()
-                    carregar_projetos.clear() # Limpa o cache para forçar recarregamento na próxima aba
+                    carregar_projetos.clear() # Limpa o cache para atualizar a lista na hora
 
 # ==============================================================================
 # ABA 3: AGENDAMENTO
@@ -217,19 +214,26 @@ with tab3:
     # Carrega dados do Cache
     lista_db = carregar_projetos()
     
-    # Tenta extrair nomes. Se der erro (lista vazia ou chave errada), retorna lista vazia
+    # Extrai lista de projetos (garante que não haja erros de chave)
     opcoes_projetos = []
     if lista_db:
-        # Procura pela chave 'Projeto'
-        opcoes_projetos = [item.get('Projeto', 'Projeto sem Nome') for item in lista_db]
+        opcoes_projetos = [p.get('Projeto', 'Sem Nome') for p in lista_db]
     
     if not opcoes_projetos:
-        st.warning("⚠️ Nenhum projeto encontrado. Se você acabou de cadastrar, aguarde alguns segundos ou verifique se a planilha 'Projetos' possui cabeçalhos na Linha 1.")
-        # Botão de emergência para recarregar
-        if st.button("🔄 Atualizar Lista de Projetos"):
+        st.warning("⚠️ Nenhum projeto encontrado no momento.")
+        col_warn, col_btn = st.columns([3, 1])
+        with col_warn:
+            st.info("Se você acabou de cadastrar um projeto, clique no botão ao lado para atualizar a lista.")
+        with col_btn:
+            if st.button("🔄 Atualizar Lista"):
+                carregar_projetos.clear()
+                st.rerun()
+        opcoes_projetos = ["---"]
+    else:
+        # Se encontrou projetos, mostra um botão pequeno discreto para atualizar se precisar
+        if st.button("🔄 Atualizar Projetos", help="Clique se não estiver vendo seu projeto recém-cadastrado"):
             carregar_projetos.clear()
             st.rerun()
-        opcoes_projetos = ["---"]
 
     with st.form("form_agendamento_detalhado"):
         st.markdown("**1. Identificação do Usuário**")
