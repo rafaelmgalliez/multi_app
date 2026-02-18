@@ -1,32 +1,13 @@
-🧬 Sistema de Gestão Multiusuário - LIDDER/UG-NEEDIER (UFRJ)
-​Bem-vindo ao repositório oficial da aplicação de gestão da Unidade de Genómica do LIDDER (Laboratório de Investigação Diagnóstica de Doenças Infecciosas Emergentes e Reemergentes) da UFRJ.
-​Esta ferramenta foi desenvolvida para digitalizar, organizar e gerir o fluxo de trabalho da plataforma multiusuário, substituindo formulários em papel e trocas de e-mail por uma interface web centralizada e integrada à nuvem.
-​🎯 Objetivos e Funcionalidades
-​O sistema atua como um portal único para investigadores e alunos, oferecendo:
-​🏛️ Portal Institucional:
-​Apresentação das normas de funcionamento e biossegurança.
-​Lista atualizada de equipamentos disponíveis (NextSeq 1000, TapeStation, etc.).
-​Links diretos para o registo no PNIPE/MCTI.
-​📝 Cadastro de Projetos (Investigadores Principais):
-​Registo obrigatório de projetos de pesquisa.
-​Recolha estruturada de fontes de financiamento (FAPERJ, CNPq, FINEP) para relatórios institucionais.
-​Validação de requisitos de Biossegurança (NB2/NB3).
-​📅 Calendário de Ocupação (Disponibilidade):
-​Visualização em tempo real dos horários já reservados.
-​Filtros dinâmicos por equipamento para evitar conflitos de agenda ("overbooking").
-​🔬 Agendamento Inteligente:
-​Solicitação de uso vinculada a projetos previamente aprovados.
-​Trava de Segurança: Bloqueia agendamentos no sequenciador NextSeq 1000 se o utilizador não anexar o relatório de Controlo de Qualidade (QC).
-​Integração direta com Google Sheets para persistência de dados.
-​🏗️ Arquitetura do Sistema
-​O projeto utiliza uma arquitetura Serverless leve, ideal para ambientes académicos que necessitam de baixo custo de manutenção.
-​Frontend: Desenvolvido em Python com a biblioteca Streamlit.
-​Backend/API: Um Web App criado com Google Apps Script que recebe requisições HTTP (POST).
-​Base de Dados: Uma Folha de Cálculo Google (Google Sheets) que armazena todas as transações.
-​🛠️ Instalação e Configuração
-​Siga este guia para executar o projeto localmente ou para implementar uma cópia no seu laboratório.
-​1. Pré-requisitos
-​Python 3.8 ou superior instalado.
-​Uma conta Google (para criar a folha de cálculo).
-​2. Configuração da Base de Dados (Google Sheets)
-​O sistema depende de uma estrutura de colunas específica para funcionar corretamente.
+🧬 Sistema de Gestão para Plataformas Multiusuário de PesquisaVersão: 1.0 (LIDDER/UG-NEEDIER)Tecnologia: Python (Streamlit) + Google Sheets APILicença: Open Source (MIT)📖 Sobre o ProjetoEste software foi desenvolvido para resolver um gargalo comum em laboratórios de pesquisa e unidades multiusuário: a gestão eficiente de agendamentos e cadastro de usuários sem custos de servidores.Originalmente concebido para a Unidade de Genômica do LIDDER (UFRJ), este sistema substitui formulários de papel, trocas de e-mail e planilhas manuais por uma interface web moderna, segura e integrada.🌟 Por que adotar este sistema?Custo Zero de Infraestrutura: Utiliza o Google Sheets como banco de dados gratuito e seguro.Conformidade com Agências de Fomento: O cadastro de projetos coleta dados obrigatórios (CNPq, Faperj, Finep) para relatórios anuais (ex: PNIPE/MCTI).Segurança Operacional: Implementa "travas" lógicas. Exemplo: Não é possível agendar o sequenciador de grande porte (NextSeq) sem anexar o laudo de Controle de Qualidade.Transparência: Possui um calendário público de ocupação para evitar conflitos de agenda.🚀 Funcionalidades do SistemaO aplicativo é dividido em 4 módulos (abas):🏛️ Portal Institucional:Apresentação da infraestrutura.Links para Regimento Interno e Normas de Biossegurança.Identidade visual customizável (Logos da Instituição).📝 Cadastro de Projetos (Investigador Principal):Cadastro único por projeto.Mapeamento de fontes de financiamento.Identificação de demandas de Biossegurança (Nível NB3).📅 Calendário de Ocupação:Visualização em tempo real dos horários ocupados.Filtros por equipamento específico.Leitura direta da base de dados para evitar overbooking.🔬 Solicitação de Uso:Formulário de agendamento vinculado ao projeto cadastrado.Seleção de serviços (Uso autônomo, Treinamento, Entrega de amostra).Upload Obrigatório: Validação de arquivos de QC para equipamentos sensíveis.🛠️ Arquitetura TécnicaO sistema utiliza uma arquitetura Serverless simplificada:Frontend: Python com framework Streamlit.Backend/API: Google Apps Script (recebe os dados via JSON).Banco de Dados: Google Sheets (armazena os registros).[Usuário] --> [App Streamlit (Python)] --> [Google Apps Script] --> [Google Sheets]
+⚙️ Guia de Instalação e Configuração (Passo a Passo)Qualquer laboratório pode clonar este repositório e adaptar para sua realidade.Passo 1: Configurar o Google Sheets (O Banco de Dados)Crie uma nova planilha no Google Sheets chamada SISTEMA_GESTAO_DB.Crie duas abas (guias) na parte inferior:Nomeie a primeira aba como: ProjetosNomeie a segunda aba como: AgendamentosImportante: Na linha 1 de cada aba, crie os cabeçalhos das colunas.Projetos: Data, Coordenador, Email, Projeto, Instituicao, Fomento, Area, NB3, Lattes, ResumoAgendamentos: DataHora, DataUso, Horario, Usuario, Vinculo, Lab, Email, Equipamento, Projeto, Tipo, Amostra, Risco, QC, ObsCompartilhe a planilha como "Qualquer pessoa com o link pode VER" (Leitor). Copie o ID da planilha (o código longo na URL).Passo 2: Criar a API de ConexãoNa planilha, vá em Extensões > Apps Script.Apague o código existente e cole o seguinte script:function doPost(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var data = JSON.parse(e.postData.contents);
+  var sheet = ss.getSheetByName(data.aba);
+  sheet.appendRow(data.dados);
+  return ContentService.createTextOutput("Sucesso");
+}
+Clique em Implantar (Deploy) > Nova implantação > App da Web.Em "Quem pode acessar", selecione: "Qualquer pessoa" (Isso é crucial para o Python conseguir salvar).Autorize o script e copie a URL gerada (Link Mágico).Passo 3: Rodar o Aplicativo PythonClone este repositório.Instale as dependências:pip install -r requirements.txt
+Crie um arquivo .streamlit/secrets.toml na pasta do projeto e adicione suas chaves:LINK_MAGICO = "Sua_URL_do_Apps_Script_Aqui"
+ID_PLANILHA = "Seu_ID_da_Planilha_Aqui"
+Execute:streamlit run app.py
+🎨 Como Personalizar para o SEU LaboratórioAbra o arquivo app.py e procure por estas seções para adaptar à sua realidade:Logo da Instituição:Altere a variável LOGO_UFRJ_URL para o link da logo do seu centro/unidade.Lista de Equipamentos:Procure a lista equip_lista dentro da Aba 4 e substitua pelos seus equipamentos (ex: Microscópios, Citômetros, Espectrômetros).Regras de Negócio:Se você não precisa de QC obrigatório, remova a condicional if is_nextseq na Aba 4.🤝 ContribuiçãoEste projeto é uma iniciativa para fortalecer a infraestrutura de pesquisa científica pública. Sinta-se à vontade para fazer forks, reportar issues ou sugerir melhorias.Desenvolvido no âmbito do Núcleo de Enfrentamento e Estudos de Doenças Infecciosas Emergentes e Reemergentes (NEEDIER/UFRJ).
